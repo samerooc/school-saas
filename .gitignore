@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# RSA Keys — NEVER commit these
+backend/keys/private.pem
+backend/keys/public.pem
+backend/firebase-credentials.json
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Alembic
+backend/alembic/versions/*.pyc
