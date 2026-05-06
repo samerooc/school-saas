@@ -1,7 +1,7 @@
 """
 Staff / Teacher Management API
 """
-import uuid, secrets, string
+import secrets, string
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +9,7 @@ from sqlalchemy import select, func, update, or_
 
 from app.db.session import get_db
 from app.core.security import require_roles, hash_password
-from app.models.models import User, Staff
+from app.models.models import User
 from app.schemas.schemas import StaffCreate, StaffUpdate, StaffOut, PaginatedResponse
 
 router = APIRouter(prefix="/staff", tags=["staff"])
@@ -38,16 +38,14 @@ async def list_staff(
 ):
     school_id = payload["school_id"]
 
-    query = (
-        select(Staff, User)
-        .join(User, User.id == Staff.user_id)
-        .where(Staff.school_id == school_id)
+    query = select(User).where(
+        User.school_id == school_id,
+        User.role.in_(["teacher", "principal", "staff"])
     )
     if search:
         query = query.where(or_(
             User.full_name.ilike(f"%{search}%"),
-            Staff.employee_id.ilike(f"%{search}%"),
-            Staff.designation.ilike(f"%{search}%"),
+            User.email.ilike(f"%{search}%"),
         ))
     if role:
         query = query.where(User.role == role)
@@ -56,29 +54,29 @@ async def list_staff(
     total = (await db.execute(count_q)).scalar() or 0
 
     query = query.offset((page - 1) * per_page).limit(per_page).order_by(User.full_name)
-    rows = (await db.execute(query)).all()
+    rows = (await db.execute(query)).scalars().all()
 
     items = [
-        StaffOut(
-            id=staff.id,
-            user_id=staff.user_id,
-            employee_id=staff.employee_id,
-            full_name=user.full_name,
-            email=user.email,
-            phone=user.phone,
-            role=user.role,
-            designation=staff.designation,
-            department=staff.department,
-            qualification=staff.qualification,
-            subjects=staff.subjects,
-            joining_date=staff.joining_date,
-            is_active=user.is_active,
-        )
-        for staff, user in rows
+        {
+            "id": str(u.id),
+            "user_id": str(u.id),
+            "full_name": u.full_name,
+            "email": u.email,
+            "phone": u.phone,
+            "role": u.role,
+            "is_active": u.is_active,
+            "designation": None,
+            "department": None,
+            "qualification": None,
+            "subjects": [],
+            "joining_date": None,
+            "employee_id": f"EMP-{str(u.id)[:6].upper()}",
+        }
+        for u in rows
     ]
 
     return PaginatedResponse(
-        items=[i.model_dump() for i in items],
+        items=items,
         total=total, page=page, per_page=per_page,
         pages=(total + per_page - 1) // per_page,
     )
@@ -92,7 +90,6 @@ async def create_staff(
 ):
     school_id = payload["school_id"]
 
-    # Check email unique
     existing = (await db.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
     if existing:
         raise HTTPException(400, "Email already registered")
@@ -110,25 +107,9 @@ async def create_staff(
     db.add(user)
     await db.flush()
 
-    count_result = await db.execute(select(func.count(Staff.id)).where(Staff.school_id == school_id))
-    count = count_result.scalar() or 0
-
-    staff = Staff(
-        user_id=user.id,
-        school_id=school_id,
-        employee_id=_gen_employee_id(count),
-        designation=body.designation,
-        department=body.department,
-        qualification=body.qualification,
-        salary=body.salary,
-        joining_date=body.joining_date,
-        subjects=body.subjects,
-    )
-    db.add(staff)
-
     return {
-        "id": str(staff.id),
-        "employee_id": staff.employee_id,
+        "id": str(user.id),
+        "employee_id": _gen_employee_id(0),
         "message": "Staff member added",
         "temp_password": temp_pwd,
     }
@@ -143,28 +124,16 @@ async def update_staff(
 ):
     school_id = payload["school_id"]
 
-    result = await db.execute(
-        select(Staff).where(Staff.id == staff_id, Staff.school_id == school_id)
-    )
-    staff = result.scalar_one_or_none()
-    if not staff:
+    user = (await db.execute(
+        select(User).where(User.id == staff_id, User.school_id == school_id)
+    )).scalar_one_or_none()
+    if not user:
         raise HTTPException(404, "Staff not found")
 
     data = body.model_dump(exclude_unset=True)
-    staff_fields = ["designation", "department", "qualification", "salary", "subjects"]
-    for f in staff_fields:
+    for f in ["full_name", "phone", "is_active", "role"]:
         if f in data:
-            setattr(staff, f, data[f])
-
-    user_update = {}
-    if "full_name" in data:
-        user_update["full_name"] = data["full_name"]
-    if "phone" in data:
-        user_update["phone"] = data["phone"]
-    if "is_active" in data:
-        user_update["is_active"] = data["is_active"]
-    if user_update:
-        await db.execute(update(User).where(User.id == staff.user_id).values(**user_update))
+            setattr(user, f, data[f])
 
     return {"message": "Staff updated"}
 
@@ -176,14 +145,10 @@ async def deactivate_staff(
     payload: dict = Depends(require_roles("admin")),
 ):
     school_id = payload["school_id"]
-    result = await db.execute(
-        select(Staff, User)
-        .join(User, User.id == Staff.user_id)
-        .where(Staff.id == staff_id, Staff.school_id == school_id)
-    )
-    row = result.first()
-    if not row:
+    user = (await db.execute(
+        select(User).where(User.id == staff_id, User.school_id == school_id)
+    )).scalar_one_or_none()
+    if not user:
         raise HTTPException(404, "Staff not found")
-    _, user = row
     user.is_active = False
     return {"message": "Staff deactivated"}
