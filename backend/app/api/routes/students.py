@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
 from app.core.security import require_roles, get_current_user_payload
-from app.models.models import Student, User, Class, Staff, AcademicYear
+from app.models.models import Student, User, Class, AcademicYear
 from app.schemas.schemas import (
     StudentCreate, StudentUpdate, StudentOut, StudentListItem, PaginatedResponse
 )
