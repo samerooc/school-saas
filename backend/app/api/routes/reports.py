@@ -12,7 +12,7 @@ from sqlalchemy import select, func
 
 from app.db.session import get_db
 from app.core.security import require_roles
-from app.models.models import Student, User, Class, Attendance, FeePayment, FeeStructure, Exam, Mark, Subject, Staff
+from app.models.models import Student, User, Class, Attendance, FeePayment, FeeStructure, Exam, Mark, Subject
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -133,7 +133,7 @@ async def dashboard_stats(
     school_id = payload["school_id"]
     today = date.today()
     total_students = (await db.execute(select(func.count(Student.id)).where(Student.school_id == school_id, Student.is_active == True))).scalar() or 0
-    total_staff = (await db.execute(select(func.count(Staff.id)).where(Staff.school_id == school_id, Staff.is_active == True))).scalar() or 0
+    total_staff = (await db.execute(select(func.count(User.id)).where(User.school_id == school_id, User.is_active == True, User.role.in_(["teacher", "principal", "staff"])))).scalar() or 0
     today_present = (await db.execute(select(func.count(Attendance.id)).where(Attendance.school_id == school_id, Attendance.date == today, Attendance.status == "present"))).scalar() or 0
     today_total = (await db.execute(select(func.count(Attendance.id)).where(Attendance.school_id == school_id, Attendance.date == today))).scalar() or 0
     month_start = today.replace(day=1)
